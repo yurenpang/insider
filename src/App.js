@@ -1,227 +1,135 @@
 import React, { Component } from 'react';
-import fire from "./fire"
+import fire from "./components/fire"
 import './App.css';
 import "react-bulma-components/full";
 import 'font-awesome/css/font-awesome.min.css';
-import ReactMapGL, {Marker, Popup, NavigationControl} from 'react-map-gl';
-import CityPin from './city-pin';
-import CityInfo from './city-info';
+import MapGL, {Marker, Popup, NavigationControl, StaticMap} from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import Header from './components/community/Header'
+import Footer from './components/community/Footer'
+import ControlPanel from './control-panel';
+import {defaultMapStyle, filterLayerIndex} from './map-style.js';
+import {fromJS} from 'immutable';
 
-import CITIES from './data/cities.json';
-
-// const TOKEN = "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iazA2Z2gycXA4N2pmbDZmangifQ.-g_vE53SD2WrJ6tFX7QHmA"
-const TOKEN = 'pk.eyJ1IjoicndhbmcyIiwiYSI6ImNqajJ3a21hbzExZ3EzcXBnc2puNTRudWkifQ.EtOfYQEh_v4rQ0q71LAqWQ'
+const TOKEN = 'pk.eyJ1IjoicndhbmcyIiwiYSI6ImNqajJ3a21hbzExZ3EzcXBnc2puNTRudWkifQ.EtOfYQEh_v4rQ0q71LAqWQ';
+const MAP_STYLE = 'mapbox://styles/rwang2/cjpj682np42vh2rr6zz04eddu';
+// const minLat = 47.45;
+// const maxLat = 47.75;
+// const minLong = -122.3;
+// const maxLong = -122.1;
 
 class App extends Component {
-
   constructor(props) {
     super(props);
-
     this.state = {
+        mapStyle: defaultMapStyle,
         viewport: {
-            // latitude: 47.6053202,
-            // longitude: -122.3381718,
-            // zoom: 12,
-            latitude: 37.785164,
-            longitude: -100,
+            latitude: 47.6049,
+            longitude: -122.3299,
             zoom: 12.09,
-            width: 950,
-            height: 1200,
             bearing: 0,
-            pitch: 0
+            pitch: 30
         },
-        popupInfo: null,
-        messages: [] }; // <- set up react state
-  }
+        hoverInfo: null,
+        settings: {
+          neighborhood: '',
+          minPrice: 0,
+          maxPrice: 5400,
+          listingType: null,
+          zipcode: 55105,
+          numGuests: 1,
 
-  componentWillMount(){
-    /* Create reference to messages in Firebase Database */
-    let messagesRef = fire.database().ref('messages').orderByKey().limitToLast(100);
-    messagesRef.on('child_added', snapshot => {
-      /* Update React state when message is added at Firebase Database */
-      let message = { text: snapshot.val(), id: snapshot.key };
-      this.setState({ messages: [message].concat(this.state.messages) });
-    })
-  }
-  addMessage(e) {
-      e.preventDefault(); // <- prevent form submit from reloading the page
-      /* Send the message to Firebase */
-      fire.database().ref('messages').push(this.inputEl.value);
-      this.inputEl.value = ''; // <- clear the input
+        }
+      }; // <- set up react state
+      this._renderPopup = this._renderPopup.bind(this);
   }
 
   _updateViewport = (viewport) => {
       this.setState({viewport});
   }
 
-  _renderCityMarker = (city, index) => {
-      return (
-          <Marker
-              key={`marker-${index}`}
-              longitude={city.longitude}
-              latitude={city.latitude} >
-              <CityPin size={20} onClick={() => this.setState({popupInfo: city})} />
-          </Marker>
-      );
-  }
+  _onHover = event => {
+   let hoverInfo = null;
+
+   const listing = event.features && event.features.find(f => f.layer.id === 'listing-num');
+   const nbhd = event.features && event.features.find(f => f.layer.id === 'seattle-neighbourhood');
+   if (listing) {
+     hoverInfo = {
+       lngLat: event.lngLat,
+       properties1: listing.properties,
+       properties2: nbhd.properties
+     };
+   }
+   this.setState({
+     hoverInfo: hoverInfo
+   });
+ };
 
   _renderPopup() {
-      const {popupInfo} = this.state;
+   const {hoverInfo} = this.state;
 
-      return popupInfo && (
-          <Popup tipSize={5}
-                 anchor="top"
-                 longitude={popupInfo.longitude}
-                 latitude={popupInfo.latitude}
-                 closeOnClick={false}
-                 onClose={() => this.setState({popupInfo: null})} >
-              <CityInfo info={popupInfo} />
-          </Popup>
-      );
-  }
+   if (hoverInfo) {
+     return (
+       <Popup longitude={hoverInfo.lngLat[0]} latitude={hoverInfo.lngLat[1]} closeButton={false}>
+         <div>Price: ${hoverInfo.properties1.PRICE}/night</div>
+         <div>Neighborhood: {hoverInfo.properties2.NBHD}</div>
+         <div>Median home value: ${hoverInfo.properties2.MED_H_VAL}</div>
+         <div><a href = {hoverInfo.properties1.URL}>Listing URL</a></div>
+       </Popup>
+     );
+   }
+   return null;
+ }
+ _onSettingChange = (name, value) => {
+
+   this.setState({
+      settings: {...this.state.settings, [name]: value},
+      mapStyle: defaultMapStyle.setIn(['layers', filterLayerIndex, 'filter', 2], this.state.settings.numGuests)
+    });
+    console.log("the setting state for guest: ",this.state.settings.numGuests);
+    console.log("the defaultMapStyle: ",defaultMapStyle.toJS());
+    console.log("filterLayerIndex:",filterLayerIndex);
+ }
 
   render() {
       const {viewport} = this.state;
       return (
-          <div>
-              <div>
-                  <nav className="navbar is-light is-fixed-top has-shadow">
-                      <div className="navbar-brand">
-                          <a className="navbar-item">
-                              <strong>Airbnb Insider</strong>
-                          </a>
-                          <div className="navbar-burger burger" data-target="navbarExampleTransparentExample">
-                              <span></span>
-                              <span></span>
-                              <span></span>
-                          </div>
-                      </div>
-                      <div className="navbar-menu is-right">
-                          <div className="navbar-start">
-                          </div>
-                          <div className="navbar-end">
-                              <div className="navbar-item">
-                                  <div className="field is-grouped">
-                                      <a className="navbar-item">
-                                          Home
-                                      </a>
-                                      <a className="navbar-item">
-                                          Search
-                                      </a>
-                                      <a className="navbar-item">
-                                          About
-                                      </a>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-                  </nav>
-              </div>
+          <div className="body">
 
+              <Header/>
               <div className="columns" id="columns">
                   <div className="column is-2" id="column-one">
-                      {/*First column*/}
+                  <ControlPanel
+                  containerComponent={this.props.containerComponent}
+                  settings={this.state.settings}
+                  onChange={this._onSettingChange}
+                    />
                   </div>
-                  <div className="column is-4" id="column-two">
-                      {/*Second column*/}
-                  </div>
+
                   <div className="column is-6 noSelect" id="column-three">
-                      {/*Third column*/}
-                      <ReactMapGL {...this.state.viewport}
+                      <MapGL {...this.state.viewport}
                                   onViewportChange={this._updateViewport}
-                                  mapStyle={'mapbox://styles/rwang2/cjooll5t33iyn2ro8jvlhzhr5'}
-                                  // 'mapbox://styles/mapbox/streets-v9'
-                                  mapboxApiAccessToken={TOKEN}>
+                                  width="100vw"
+                                  height="100vh"
+                                  mapStyle={MAP_STYLE}
+                                  mapboxApiAccessToken={TOKEN}
+                                  onClick = {this._onHover}
+                                  >
 
-                          { CITIES.map(this._renderCityMarker) }
-
-                          {this._renderPopup()}
+                          { this._renderPopup() }
 
                           <div className="nav" style={{position: "absolute", top: 100, left: 50}}>
                               <NavigationControl onViewportChange={this._updateViewport}/>
                           </div>
 
-                      </ReactMapGL>
+                      </MapGL>
                   </div>
               </div>
+              <Footer/>
 
-              <div>
-                  <nav className="navbar is-transparent is-dark is-fixed-bottom has-shadow">
-                      <div className="navbar-brand">
-                          <a className="navbar-item">
-                              <strong>Airbnb Insider</strong>
-                          </a>
-                          <div className="navbar-burger burger" data-target="navbarExampleTransparentExample">
-                              <span></span>
-                              <span></span>
-                              <span></span>
-                          </div>
-                      </div>
-                      <div className="navbar-menu is-right">
-                          <div className="navbar-start">
-                          </div>
-
-                          <div className="navbar-end">
-                              <div className="navbar-item">
-                                  <div className="field is-grouped">
-                                      <div className="control">
-                                          <a className="icons">
-                                              <i className="fa fa-facebook"></i>
-                                          </a>
-                                          <a className="icons">
-                                              <i className="fa fa-instagram"></i>
-                                          </a>
-                                          <a className="icons">
-                                              <i className="fa fa-twitter"></i>
-                                          </a>
-                                      </div>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-                  </nav>
-              </div>
           </div>
       )
   }
-
-  //Rock's firebase work
-  // render() {
-  //   return (
-  //     <form onSubmit={this.addMessage.bind(this)}>
-  //       <input type="text" ref={ el => this.inputEl = el }/>
-  //       <input type="submit"/>
-  //       <ul>
-  //         { /* Render the list of messages */
-  //           this.state.messages.map( message => <li key={message.id}>{message.text}</li> )
-  //         }
-  //       </ul>
-  //     </form>
-  //   );
-  // }
-
-
-  // render() {
-  //   return (
-  //     <div className="App">
-  //       <header className="App-header">
-  //         <img src={logo} className="App-logo" alt="logo" />
-  //         <p>
-  //           Edit <code>src/App.js</code> and save to reload.
-  //         </p>
-  //         <a
-  //           className="App-link"
-  //           href="https://reactjs.org"
-  //           target="_blank"
-  //           rel="noopener noreferrer"
-  //         >
-  //           Learn React
-  //         </a>
-  //       </header>
-  //     </div>
-  //   );
-  // }
 }
 
 export default App;
